@@ -20,11 +20,22 @@ class BlkidCacheException(BlkidException):
 cdef class Cache:
     cdef blkid.blkid_cache cache
 
-    def __cinit__(self):
+    def __cinit__(self, renew_cache=False):
+        self.get_cache(renew_cache)
+
+    cdef void get_cache(self, renew_cache=False):
+        cdef const char * read = NULL
+        if renew_cache:
+            read_str = '/dev/null'.encode()
+            read = read_str
+
         with nogil:
-            ret = blkid.blkid_get_cache(&self.cache, NULL)
+            ret = blkid.blkid_get_cache(&self.cache, read)
             if ret != 0:
                 raise BlkidCacheException(ret, 'Unable to retrieve cache')
+
+    def clean_cache(self):
+        self.get_cache(True)
 
     cdef get_devices(self, char *search_type, char *search_value):
         cdef blkid.blkid_dev_iterate blkid_iter
@@ -33,10 +44,11 @@ cdef class Cache:
         block_devices = []
 
         with nogil:
-            blkid_iter = blkid.blkid_dev_iterate_begin(self.cache)
             ret = blkid.blkid_probe_all(self.cache)
             if ret != 0:
                 raise BlkidException(ret, 'Failed to probe devices')
+
+            blkid_iter = blkid.blkid_dev_iterate_begin(self.cache)
 
             blkid.blkid_dev_set_search(blkid_iter, search_type, search_value)
 
@@ -172,8 +184,8 @@ cdef class BlockDevice(object):
             return self.lowprobe_device()
 
 
-def list_block_devices():
-    return list(Cache())
+def list_block_devices(clean_cache=False):
+    return list(Cache(clean_cache))
 
 
 def list_supported_filesystems():
