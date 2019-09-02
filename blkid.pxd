@@ -46,6 +46,7 @@ cdef extern from 'blkid.h' nogil:
     extern int blkid_probe_enable_topology(blkid_probe pr, int enable)
     # Superblock probing
     extern int blkid_probe_enable_superblocks(blkid_probe pr, int enable)
+    extern int blkid_superblocks_get_name(size_t idx, const char **name, int *usage)
     # Partition probing
     extern int blkid_probe_enable_partitions(blkid_probe pr, int enable)
     # NAME=value low-level interface

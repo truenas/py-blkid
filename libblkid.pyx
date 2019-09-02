@@ -57,6 +57,19 @@ cdef class Cache:
     def garbage_collect_cache(self):
         self._garbage_collect_cache()
 
+    cpdef supported_filesystems(self):
+        cdef const char * name
+        cdef size_t idx = 0
+        supported_fs = []
+
+        with nogil:
+            while blkid.blkid_superblocks_get_name(idx, &name, NULL) == 0:
+                with gil:
+                    idx += 1
+                    supported_fs.append(name.decode())
+
+        return supported_fs
+
     def __iter__(self):
         return iter(self.get_devices(NULL, NULL))
 
@@ -135,3 +148,7 @@ cdef class BlockDevice(object):
 
 def list_block_devices():
     return list(Cache())
+
+
+def list_supported_filesystems():
+    return Cache().supported_filesystems()
