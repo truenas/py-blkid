@@ -1,5 +1,8 @@
 cimport blkid
 
+import os
+
+
 class BlkidException(Exception):
     def __init__(self, code, message):
         super(Exception, self).__init__(message)
@@ -68,7 +71,8 @@ cdef class BlockDevice(object):
     def __getstate__(self):
         return {
             'name': self.name,
-            **self.tags
+            **self.tags,
+            **self.probing_data,
         }
 
     property name:
@@ -92,6 +96,42 @@ cdef class BlockDevice(object):
                 tags[tag_type.decode()] = value.decode()
 
             return tags
+
+    cdef lowprobe_device(self):
+        cdef int ret, file_no, nvals = 0
+        cdef const char * name, * data
+        cdef blkid.blkid_probe pr = blkid.blkid_new_probe()
+        if pr == NULL:
+            raise BlkidException('Unable to allocate probing struct')
+
+        probing_data = {}
+
+        with open(os.open(self.name, os.O_RDONLY|os.O_CLOEXEC), 'r') as f:
+            file_no = f.fileno()
+            with nogil:
+                if blkid.blkid_probe_set_device(pr, file_no, 0, 0) != 0:
+                    raise BlkidException(-1, 'Unable to assign the device to probe control structure')
+                blkid.blkid_probe_enable_topology(pr, 1)
+                blkid.blkid_probe_enable_superblocks(pr, 0)
+                blkid.blkid_probe_enable_partitions(pr, 0)
+                if blkid.blkid_do_fullprobe(pr) != 0:
+                    raise BlkidException(-1, 'Failed to probe device')
+
+                nvals = blkid.blkid_probe_numof_values(pr)
+                for i in range(nvals):
+                    if blkid.blkid_probe_get_value(pr, i, &name, &data, NULL) != 0:
+                        continue
+                    with gil:
+                        probing_data[name.decode()] = data.decode()
+
+        blkid.blkid_free_probe(pr)
+
+        return probing_data
+
+    property probing_data:
+        def __get__(self):
+            return self.lowprobe_device()
+
 
 def list_block_devices():
     return list(Cache())
