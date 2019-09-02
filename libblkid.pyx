@@ -1,6 +1,7 @@
 cimport blkid
 
 import os
+import stat
 
 
 class BlkidException(Exception):
@@ -81,11 +82,11 @@ cdef class BlockDevice(object):
         # TODO: Let's make sure user is not able to instantiate this
         self.dev = <blkid.blkid_dev>device
 
-    def __getstate__(self):
+    def __getstate__(self, superblock_mode=False):
         return {
             'name': self.name,
             **self.tags,
-            **self.probing_data,
+            **self.lowprobe_device(superblock_mode=superblock_mode),
         }
 
     property name:
@@ -110,8 +111,8 @@ cdef class BlockDevice(object):
 
             return tags
 
-    cdef lowprobe_device(self):
-        cdef int ret, file_no, nvals = 0
+    cdef lowprobe_device(self, superblock_mode=False):
+        cdef int ret, file_no, character_device, enable_superblock, nvals = 0, s_block_mode = superblock_mode
         cdef const char * name, * data
         cdef blkid.blkid_probe pr = blkid.blkid_new_probe()
         if pr == NULL:
@@ -121,14 +122,39 @@ cdef class BlockDevice(object):
 
         with open(os.open(self.name, os.O_RDONLY|os.O_CLOEXEC), 'r') as f:
             file_no = f.fileno()
+            character_device = stat.S_ISCHR(os.stat(self.name).st_mode)
             with nogil:
                 if blkid.blkid_probe_set_device(pr, file_no, 0, 0) != 0:
                     raise BlkidException(-1, 'Unable to assign the device to probe control structure')
+                if s_block_mode:
+                    blkid.blkid_probe_set_superblocks_flags(
+                        pr, blkid.BLKID_SUBLKS_LABEL | blkid.BLKID_SUBLKS_UUID | blkid.BLKID_SUBLKS_TYPE
+                            | blkid.BLKID_SUBLKS_SECTYPE | blkid.BLKID_SUBLKS_USAGE | blkid.BLKID_SUBLKS_VERSION
+                    )
+
                 blkid.blkid_probe_enable_topology(pr, 1)
                 blkid.blkid_probe_enable_superblocks(pr, 0)
                 blkid.blkid_probe_enable_partitions(pr, 0)
-                if blkid.blkid_do_fullprobe(pr) != 0:
+                ret = blkid.blkid_do_fullprobe(pr)
+                if ret < 0:
                     raise BlkidException(-1, 'Failed to probe device')
+                if ret or s_block_mode:
+                    blkid.blkid_probe_enable_partitions(pr, 1)
+                    enable_superblock = 1
+                    if character_device and blkid.blkid_probe_get_size(pr) <= (1024 * 1440) and \
+                            blkid.blkid_probe_is_wholedisk(pr):
+                        # TODO: Please verify why 1024 * 1440 ?
+                        blkid.blkid_probe_enable_superblocks(pr, 0)
+                        ret = blkid.blkid_do_fullprobe(pr)
+                        if ret < 0:
+                            raise BlkidException(-1, 'Failed to probe device')
+                        enable_superblock = blkid.blkid_probe_lookup_value(pr, 'PTTYPE', NULL, NULL)
+
+                    if enable_superblock != 0:
+                        blkid.blkid_probe_set_partitions_flags(pr, blkid.BLKID_PARTS_ENTRY_DETAILS)
+                        blkid.blkid_probe_enable_superblocks(pr, 1)
+                        if blkid.blkid_do_safeprobe(pr) < 0:
+                            raise BlkidException(-1, 'Failed to probe device')
 
                 nvals = blkid.blkid_probe_numof_values(pr)
                 for i in range(nvals):

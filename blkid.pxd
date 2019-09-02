@@ -47,12 +47,29 @@ cdef extern from 'blkid.h' nogil:
     # Superblock probing
     extern int blkid_probe_enable_superblocks(blkid_probe pr, int enable)
     extern int blkid_superblocks_get_name(size_t idx, const char **name, int *usage)
+    extern int blkid_probe_enable_superblocks(blkid_probe pr, int enable)
+    extern int blkid_probe_set_superblocks_flags(blkid_probe pr, int flags)
+    enum:
+        BLKID_SUBLKS_LABEL
+        BLKID_SUBLKS_UUID
+        BLKID_SUBLKS_TYPE
+        BLKID_SUBLKS_SECTYPE
+        BLKID_SUBLKS_USAGE
+        BLKID_SUBLKS_VERSION
     # Partition probing
     extern int blkid_probe_enable_partitions(blkid_probe pr, int enable)
     # NAME=value low-level interface
     extern int blkid_do_fullprobe(blkid_probe pr)
     extern int blkid_probe_numof_values(blkid_probe pr)
     extern int blkid_probe_get_value(blkid_probe pr, int num, const char **name, const char **data, size_t *len)
+    extern int blkid_probe_lookup_value(blkid_probe pr, const char *name, const char **data, size_t *len)
+    extern int blkid_do_safeprobe(blkid_probe pr)
     # probe.c
     extern blkid_probe blkid_new_probe()
     extern void blkid_free_probe(blkid_probe pr)
+    extern int blkid_probe_is_wholedisk(blkid_probe pr)
+    extern blkid_loff_t blkid_probe_get_size(blkid_probe pr)
+    # Partition probing flags
+    extern int blkid_probe_set_partitions_flags(blkid_probe pr, int flags)
+    enum:
+        BLKID_PARTS_ENTRY_DETAILS
