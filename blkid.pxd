@@ -28,8 +28,11 @@ cdef extern from 'blkid.h' nogil:
 
     ctypedef stdint.int64_t blkid_loff_t
 
+    # cache.c
     extern int blkid_get_cache(blkid_cache *cache, const char *filename)
+    extern void blkid_put_cache(blkid_cache cache);
     extern void blkid_gc_cache(blkid_cache cache)
+
     extern int blkid_probe_all(blkid_cache cache)
     extern blkid_dev_iterate blkid_dev_iterate_begin(blkid_cache cache)
     extern int blkid_dev_set_search(blkid_dev_iterate iter, const char *search_type, const char *search_value)
@@ -73,3 +76,13 @@ cdef extern from 'blkid.h' nogil:
     extern int blkid_probe_set_partitions_flags(blkid_probe pr, int flags)
     enum:
         BLKID_PARTS_ENTRY_DETAILS
+    # devname.c
+    extern blkid_dev blkid_get_dev(blkid_cache cache, const char *devname, int flags)
+    enum:
+        BLKID_DEV_FIND
+        BLKID_DEV_CREATE
+        BLKID_DEV_VERIFY
+        BLKID_DEV_NORMAL
+    # Functions to create and find a specific tag type
+    extern void blkid_free_dev(blkid_dev dev)
+    extern blkid_dev blkid_new_dev()

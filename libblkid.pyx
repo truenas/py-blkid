@@ -22,9 +22,12 @@ cdef class Cache:
     cdef blkid.blkid_cache cache
 
     def __cinit__(self, renew_cache=False):
-        self.get_cache(renew_cache)
+        self.initialize_cache(renew_cache)
 
-    cdef void get_cache(self, renew_cache=False):
+    def __dealloc__(self):
+        blkid.blkid_put_cache(self.cache)
+
+    cdef void initialize_cache(self, renew_cache=False):
         cdef const char * read = NULL
         if renew_cache:
             read_str = '/dev/null'.encode()
@@ -36,7 +39,7 @@ cdef class Cache:
                 raise BlkidCacheException(ret, 'Unable to retrieve cache')
 
     def clean_cache(self):
-        self.get_cache(True)
+        self.initialize_cache(True)
 
     cdef get_devices(self, char *search_type, char *search_value):
         cdef blkid.blkid_dev_iterate blkid_iter
@@ -59,7 +62,7 @@ cdef class Cache:
                     continue
                 devname = blkid.blkid_dev_devname(dev)
                 with gil:
-                    block_devices.append(BlockDevice(<object>dev))
+                    block_devices.append(BlockDevice(devname.decode(), blkid.BLKID_DEV_FIND, self))
 
             blkid.blkid_dev_iterate_end(blkid_iter)
 
@@ -88,30 +91,40 @@ cdef class Cache:
         return iter(self.get_devices(NULL, NULL))
 
 
-cdef class BlockDevice(object):
+cdef class BlockDevice:
     cdef blkid.blkid_dev dev
+    cdef Cache cache
     cdef str device_name
 
-    def __cinit__(self, object device=None, str name=None):
-        self.dev = <blkid.blkid_dev>device if device is not None else NULL
+    def __cinit__(self, str name, int flags=0, Cache cache=None):
         self.device_name = name
 
-        if self.dev == NULL and not self.device_name:
+        if not self.device_name:
             raise BlkidException(errno.EINVAL, 'Please specify either device object or block device name')
+        elif not os.path.exists(self.device_name):
+            raise BlkidException(errno.EINVAL, f'{self.device_name} does not exist')
+
+        self.cache = cache or Cache()
+        cache_obj = self.cache.cache
+        cdef blkid.blkid_cache cache_p = <blkid.blkid_cache>cache_obj
+
+        flags = flags or blkid.BLKID_DEV_FIND
+
+        encoded_device_name = self.device_name.encode()
+        cdef const char * dev_name = encoded_device_name
+        with nogil:
+            self.dev = blkid.blkid_get_dev(cache_p, dev_name, flags)
 
     def __getstate__(self, superblock_mode=False):
-        state = {
+        return {
             'name': self.name,
+            **self.tags,
             **self.lowprobe_device(superblock_mode=superblock_mode),
         }
-        if self.dev != NULL:
-            state.update(self.tags)
-
-        return state
 
     property name:
         def __get__(self):
-            return self.device_name or (blkid.blkid_dev_devname(self.dev)).decode()
+            return self.device_name
 
     property tags:
         def __get__(self):
@@ -136,7 +149,7 @@ cdef class BlockDevice(object):
         cdef const char * name, * data
         cdef blkid.blkid_probe pr = blkid.blkid_new_probe()
         if pr == NULL:
-            raise BlkidException('Unable to allocate probing struct')
+            raise BlkidException(-1, 'Unable to allocate probing struct')
 
         probing_data = {}
 
