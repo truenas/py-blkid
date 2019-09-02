@@ -26,7 +26,7 @@ cdef class Cache:
         cdef blkid.blkid_dev_iterate blkid_iter
         cdef blkid.blkid_dev dev
         cdef char *devname
-        names = []
+        block_devices = []
 
         with nogil:
             blkid_iter = blkid.blkid_dev_iterate_begin(self.cache)
@@ -42,15 +42,49 @@ cdef class Cache:
                     continue
                 devname = blkid.blkid_dev_devname(dev)
                 with gil:
-                    names.append(devname.decode())
+                    block_devices.append(BlockDevice(<object>dev))
 
             blkid.blkid_dev_iterate_end(blkid_iter)
 
-        return names
+        return block_devices
 
     def __iter__(self):
         return iter(self.get_devices(NULL, NULL))
 
+
+cdef class BlockDevice(object):
+    cdef blkid.blkid_dev dev
+
+    def __cinit__(self, object device):
+        # TODO: Let's make sure user is not able to instantiate this
+        self.dev = <blkid.blkid_dev>device
+
+    def __getstate__(self):
+        return {
+            'name': self.name,
+            **self.tags()
+        }
+
+    property name:
+        def __get__(self):
+            return (blkid.blkid_dev_devname(self.dev)).decode()
+
+    cpdef tags(self):
+        cdef blkid.blkid_tag_iterate tag_iterator = blkid.blkid_tag_iterate_begin(self.dev)
+        cdef char *tag_type, *value
+        cdef int ret = 0
+        tags = {}
+        while True:
+            with nogil:
+                ret = blkid.blkid_tag_next(tag_iterator, &tag_type, &value)
+            if ret != 0:
+                with nogil:
+                    blkid.blkid_tag_iterate_end(tag_iterator)
+                break
+
+            tags[tag_type.decode()] = value.decode()
+
+        return tags
 
 def list_block_devices():
     return list(Cache())
