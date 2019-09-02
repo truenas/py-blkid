@@ -48,6 +48,12 @@ cdef class Cache:
 
         return block_devices
 
+    cdef void _garbage_collect_cache(self) nogil:
+        blkid.blkid_gc_cache(self.cache)
+
+    def garbage_collect_cache(self):
+        self._garbage_collect_cache()
+
     def __iter__(self):
         return iter(self.get_devices(NULL, NULL))
 
@@ -62,29 +68,30 @@ cdef class BlockDevice(object):
     def __getstate__(self):
         return {
             'name': self.name,
-            **self.tags()
+            **self.tags
         }
 
     property name:
         def __get__(self):
             return (blkid.blkid_dev_devname(self.dev)).decode()
 
-    cpdef tags(self):
-        cdef blkid.blkid_tag_iterate tag_iterator = blkid.blkid_tag_iterate_begin(self.dev)
-        cdef char *tag_type, *value
-        cdef int ret = 0
-        tags = {}
-        while True:
-            with nogil:
-                ret = blkid.blkid_tag_next(tag_iterator, &tag_type, &value)
-            if ret != 0:
+    property tags:
+        def __get__(self):
+            cdef blkid.blkid_tag_iterate tag_iterator = blkid.blkid_tag_iterate_begin(self.dev)
+            cdef char *tag_type, *value
+            cdef int ret = 0
+            tags = {}
+            while True:
                 with nogil:
-                    blkid.blkid_tag_iterate_end(tag_iterator)
-                break
+                    ret = blkid.blkid_tag_next(tag_iterator, &tag_type, &value)
+                if ret != 0:
+                    with nogil:
+                        blkid.blkid_tag_iterate_end(tag_iterator)
+                    break
 
-            tags[tag_type.decode()] = value.decode()
+                tags[tag_type.decode()] = value.decode()
 
-        return tags
+            return tags
 
 def list_block_devices():
     return list(Cache())
