@@ -1,5 +1,6 @@
 cimport blkid
 
+import errno
 import os
 import stat
 
@@ -89,21 +90,28 @@ cdef class Cache:
 
 cdef class BlockDevice(object):
     cdef blkid.blkid_dev dev
+    cdef str device_name
 
-    def __cinit__(self, object device):
-        # TODO: Let's make sure user is not able to instantiate this
-        self.dev = <blkid.blkid_dev>device
+    def __cinit__(self, object device=None, str name=None):
+        self.dev = <blkid.blkid_dev>device if device is not None else NULL
+        self.device_name = name
+
+        if self.dev == NULL and not self.device_name:
+            raise BlkidException(errno.EINVAL, 'Please specify either device object or block device name')
 
     def __getstate__(self, superblock_mode=False):
-        return {
+        state = {
             'name': self.name,
-            **self.tags,
             **self.lowprobe_device(superblock_mode=superblock_mode),
         }
+        if self.dev != NULL:
+            state.update(self.tags)
+
+        return state
 
     property name:
         def __get__(self):
-            return (blkid.blkid_dev_devname(self.dev)).decode()
+            return self.device_name or (blkid.blkid_dev_devname(self.dev)).decode()
 
     property tags:
         def __get__(self):
