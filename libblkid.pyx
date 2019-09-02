@@ -20,26 +20,26 @@ class BlkidCacheException(BlkidException):
 
 cdef class Cache:
     cdef blkid.blkid_cache cache
+    cdef const char * cache_filename
 
-    def __cinit__(self, renew_cache=False):
-        self.initialize_cache(renew_cache)
-
-    def __dealloc__(self):
-        blkid.blkid_put_cache(self.cache)
-
-    cdef void initialize_cache(self, renew_cache=False):
-        cdef const char * read = NULL
+    def __cinit__(self, renew_cache=False, cache_filename=None):
         if renew_cache:
-            read_str = '/dev/null'.encode()
-            read = read_str
+            cache_filename = '/dev/null'
+
+        if cache_filename:
+            encoded_filename = cache_filename.encode()
+            self.cache_filename = encoded_filename
+        else:
+            self.cache_filename = NULL
 
         with nogil:
-            ret = blkid.blkid_get_cache(&self.cache, read)
+            ret = blkid.blkid_get_cache(&self.cache, self.cache_filename)
             if ret != 0:
                 raise BlkidCacheException(ret, 'Unable to retrieve cache')
 
-    def clean_cache(self):
-        self.initialize_cache(True)
+
+    def __dealloc__(self):
+        blkid.blkid_put_cache(self.cache)
 
     cdef get_devices(self, char *search_type, char *search_value):
         cdef blkid.blkid_dev_iterate blkid_iter
@@ -205,8 +205,8 @@ cdef class BlockDevice:
             return self.lowprobe_device()
 
 
-def list_block_devices(clean_cache=False):
-    return list(Cache(clean_cache))
+def list_block_devices(clean_cache=False, cache_filename=None):
+    return list(Cache(clean_cache, cache_filename))
 
 
 def list_supported_filesystems():
