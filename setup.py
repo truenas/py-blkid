@@ -29,6 +29,7 @@ setup(
             'blkid',
             ['libblkid.pyx'],
             extra_compile_args=config.CFLAGS,
+            cython_include_dirs=['.'],
             extra_link_args=config.LDFLAGS,
         )
     ]
