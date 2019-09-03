@@ -10,14 +10,26 @@ cdef extern from 'blkid.h' nogil:
     cdef struct blkid_struct_dev_iterate:
         pass
 
-    ctypedef struct blkid_struct_dev:
+    cdef struct blkid_struct_dev:
         # The device object keeps information about one device
         pass
 
-    ctypedef struct blkid_struct_tag_iterate:
+    cdef struct blkid_struct_tag_iterate:
         pass
 
-    ctypedef struct blkid_struct_probe:
+    cdef struct blkid_struct_probe:
+        pass
+
+    cdef struct blkid_struct_partlist:
+        # list of all detected partitions and partitions tables
+        pass
+
+    cdef struct blkid_struct_parttable:
+        # information about a partition table
+        pass
+
+    cdef struct blkid_struct_partition:
+        # Information about a partition
         pass
 
     ctypedef blkid_struct_cache * blkid_cache
@@ -25,6 +37,9 @@ cdef extern from 'blkid.h' nogil:
     ctypedef blkid_struct_dev * blkid_dev
     ctypedef blkid_struct_tag_iterate * blkid_tag_iterate
     ctypedef blkid_struct_probe * blkid_probe
+    ctypedef blkid_struct_partlist * blkid_partlist
+    ctypedef blkid_struct_parttable * blkid_parttable
+    ctypedef blkid_struct_partition * blkid_partition
 
     ctypedef stdint.int64_t blkid_loff_t
 
@@ -87,3 +102,17 @@ cdef extern from 'blkid.h' nogil:
     # Functions to create and find a specific tag type
     extern void blkid_free_dev(blkid_dev dev)
     extern blkid_dev blkid_new_dev()
+    # Binary interface
+    extern blkid_partlist blkid_probe_get_partitions(blkid_probe pr)
+    extern blkid_parttable blkid_partlist_get_table(blkid_partlist ls)
+    extern const char *blkid_parttable_get_type(blkid_parttable tab)
+    extern blkid_loff_t blkid_parttable_get_offset(blkid_parttable tab)
+    extern const char *blkid_parttable_get_id(blkid_parttable tab)
+    extern int blkid_partlist_numof_partitions(blkid_partlist ls)
+    extern blkid_partition blkid_partlist_get_partition(blkid_partlist ls, int n)
+    extern blkid_parttable blkid_partition_get_table(blkid_partition par)
+    extern blkid_loff_t blkid_partition_get_start(blkid_partition par)
+    extern blkid_loff_t blkid_partition_get_size(blkid_partition par)
+    extern int blkid_partition_get_partno(blkid_partition par)
+    extern const char *blkid_partition_get_name(blkid_partition par)
+    extern const char *blkid_partition_get_uuid(blkid_partition par)

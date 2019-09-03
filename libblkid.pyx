@@ -148,6 +148,8 @@ cdef class BlockDevice:
             raise BlkidException(errno.EINVAL, 'Please specify either device object or block device name')
         elif not os.path.exists(self.device_name):
             raise BlkidException(errno.EINVAL, f'{self.device_name} does not exist')
+        elif not stat.S_ISBLK(os.stat(self.name).st_mode):
+            raise BlkidException(errno.EINVAL, 'Please specify a valid block device')
 
         self.cache = cache or Cache()
         cache_obj = self.cache.cache
@@ -163,8 +165,10 @@ cdef class BlockDevice:
     def __getstate__(self, superblock_mode=False):
         return {
             'name': self.name,
+            'partitions_exist': self.has_partitions(),
             **self.tags,
             **self.lowprobe_device(superblock_mode=superblock_mode),
+            **self.retrieve_partition_data(),
         }
 
     property name:
@@ -189,13 +193,87 @@ cdef class BlockDevice:
 
             return tags
 
+    def partition_data(self, filters=None):
+        return self.retrieve_partition_data(filters)
+
+    cdef object retrieve_partition_data(self, filter_values=None):
+        partition_data = {}
+        if not self.has_partitions():
+            # There is no partition related data
+            return partition_data
+
+        cdef BlkidProbe probe = BlkidProbe(self.name)
+        cdef blkid.blkid_partlist ls
+        cdef blkid.blkid_parttable root_tab
+        cdef blkid.blkid_loff_t device_size, offset, start, part_size
+        cdef const char * partition_type, * partition_id, * part_name, * part_uuid
+        cdef int no_of_partitions, part_no
+        cdef blkid.blkid_partition par
+        cdef blkid.blkid_parttable tab
+
+        partitions = []
+
+        with probe:
+            with nogil:
+                ls = blkid.blkid_probe_get_partitions(probe.pr)
+                if ls == NULL:
+                    raise BlkidException(-1, f'Failed to read partitions for {self.name} device')
+                root_tab = blkid.blkid_partlist_get_table(ls)
+                if root_tab == NULL:
+                    raise BlkidException(-1, f'{self.name} device does not contain any known partition table')
+
+                device_size = blkid.blkid_probe_get_size(probe.pr)
+                partition_type = blkid.blkid_parttable_get_type(root_tab)
+                offset = blkid.blkid_parttable_get_offset(root_tab)
+                partition_id = blkid.blkid_parttable_get_id(root_tab)
+                no_of_partitions = blkid.blkid_partlist_numof_partitions(ls)
+                for i in range(no_of_partitions):
+                    par = blkid.blkid_partlist_get_partition(ls, i)
+                    tab = blkid.blkid_partition_get_table(par)
+                    # Retrieve partition data
+                    part_no = blkid.blkid_partition_get_partno(par)
+                    start = blkid.blkid_partition_get_start(par)
+                    part_size = blkid.blkid_partition_get_size(par)
+                    part_name = blkid.blkid_partition_get_name(par)
+                    part_uuid = blkid.blkid_partition_get_uuid(par)
+                    with gil:
+                        partitions.append({
+                            'partition_number': part_no,
+                            'partition_start': start,
+                            'partition_size': part_size,
+                            'part_name': part_name.decode() if part_name != NULL else None,
+                            'part_uuid': part_uuid.decode() if part_uuid != NULL else None,
+                        })
+
+            if filter_values is None or 'partitions' in filter_values:
+                partition_data['partitions'] = partitions
+                partition_data['no_of_partitions'] = no_of_partitions
+            if filter_values is None or 'device_size' in filter_values:
+                partition_data['device_size'] = device_size
+            if filter_values is None or 'partition_offset' in filter_values:
+                partition_data['partition_offset'] = offset
+
+            partition_data['partition_id'] = partition_id.decode()
+
+        return partition_data
+
+    cdef has_partitions(self):
+        cdef BlkidProbe probe = BlkidProbe(self.name)
+        cdef int ret
+        with probe:
+            with nogil:
+                blkid.blkid_probe_enable_partitions(probe.pr, 1)
+                blkid.blkid_do_fullprobe(probe.pr)
+
+                ret = blkid.blkid_probe_lookup_value(probe.pr, 'PTTYPE', NULL, NULL)
+        return ret == 0
+
     cdef lowprobe_device(self, superblock_mode=False):
-        cdef int ret, file_no, character_device, enable_superblock, nvals = 0, s_block_mode = superblock_mode
+        cdef int ret, file_no, enable_superblock, nvals = 0, s_block_mode = superblock_mode
         cdef const char * name, * data
         cdef BlkidProbe probe = BlkidProbe(self.name)
 
         with probe:
-            character_device = stat.S_ISCHR(os.stat(self.name).st_mode)
             with nogil:
                 if s_block_mode:
                     blkid.blkid_probe_set_superblocks_flags(
@@ -211,29 +289,21 @@ cdef class BlockDevice:
                     raise BlkidException(-1, 'Failed to probe device')
                 if ret or s_block_mode:
                     blkid.blkid_probe_enable_partitions(probe.pr, 1)
-                    enable_superblock = 1
-                    if not character_device and blkid.blkid_probe_get_size(probe.pr) <= (1024 * 1440) and \
-                            blkid.blkid_probe_is_wholedisk(probe.pr):
-                        # TODO: Please verify why 1024 * 1440 ?
-                        blkid.blkid_probe_enable_superblocks(probe.pr, 0)
-                        ret = blkid.blkid_do_fullprobe(probe.pr)
-                        if ret < 0:
-                            raise BlkidException(-1, 'Failed to probe device')
-                        enable_superblock = blkid.blkid_probe_lookup_value(probe.pr, 'PTTYPE', NULL, NULL)
-
-                    if enable_superblock != 0:
-                        blkid.blkid_probe_set_partitions_flags(probe.pr, blkid.BLKID_PARTS_ENTRY_DETAILS)
-                        blkid.blkid_probe_enable_superblocks(probe.pr, 1)
-                        if blkid.blkid_do_safeprobe(probe.pr) < 0:
-                            raise BlkidException(-1, 'Failed to probe device')
+                    blkid.blkid_probe_set_partitions_flags(probe.pr, blkid.BLKID_PARTS_ENTRY_DETAILS)
+                    blkid.blkid_probe_enable_superblocks(probe.pr, 1)
+                    if blkid.blkid_do_safeprobe(probe.pr) < 0:
+                        raise BlkidException(-1, 'Failed to probe device')
 
             probing_data = probe.retrieve_values()
 
         return probing_data
 
-    property probing_data:
+    def probing_data(self, superblock_mode=False):
+        return self.lowprobe_device(superblock_mode)
+
+    property partitions_exist:
         def __get__(self):
-            return self.lowprobe_device()
+            return self.has_partitions()
 
 
 def list_block_devices(clean_cache=False, cache_filename=None):
