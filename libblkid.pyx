@@ -18,6 +18,11 @@ class BlkidCacheException(BlkidException):
     pass
 
 
+class DeviceNotFound(BlkidException):
+    def __init__(self, device):
+        super().__init__(errno.ENOENT, f'Device {device} not found')
+
+
 cdef class Cache:
     cdef blkid.blkid_cache cache
     cdef const char * cache_filename
@@ -91,6 +96,46 @@ cdef class Cache:
         return iter(self.get_devices(NULL, NULL))
 
 
+cdef class BlkidProbe:
+    cdef blkid.blkid_probe pr
+    cdef const char * name
+
+    def __cinit__(self, devname):
+        if not os.path.exists(devname):
+            raise DeviceNotFound(devname)
+        encoded = devname.encode()
+        self.name = encoded
+
+    def __enter__(self):
+        with nogil:
+            self.pr = blkid.blkid_new_probe_from_filename(self.name)
+        if self.pr == NULL:
+            raise BlkidException(-1, f'Failed to create libblkid probe for {self.name.decode()}')
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        with nogil:
+            blkid.blkid_free_probe(self.pr)
+        self.pr = NULL
+
+    cdef object retrieve_values(self):
+        if self.pr == NULL:
+            raise BlkidException(errno.ENXIO, 'No libblkid probe defined')
+
+        probing_data = {}
+        cdef const char * name, * data
+        cdef int nvals
+        with nogil:
+            nvals = blkid.blkid_probe_numof_values(self.pr)
+            for i in range(nvals):
+                if blkid.blkid_probe_get_value(self.pr, i, &name, &data, NULL) != 0:
+                    continue
+                with gil:
+                    probing_data[name.decode()] = data.decode()
+
+        return probing_data
+
+
 cdef class BlockDevice:
     cdef blkid.blkid_dev dev
     cdef Cache cache
@@ -147,56 +192,42 @@ cdef class BlockDevice:
     cdef lowprobe_device(self, superblock_mode=False):
         cdef int ret, file_no, character_device, enable_superblock, nvals = 0, s_block_mode = superblock_mode
         cdef const char * name, * data
-        cdef blkid.blkid_probe pr = blkid.blkid_new_probe()
-        if pr == NULL:
-            raise BlkidException(-1, 'Unable to allocate probing struct')
+        cdef BlkidProbe probe = BlkidProbe(self.name)
 
-        probing_data = {}
-
-        with open(os.open(self.name, os.O_RDONLY|os.O_CLOEXEC), 'r') as f:
-            file_no = f.fileno()
+        with probe:
             character_device = stat.S_ISCHR(os.stat(self.name).st_mode)
             with nogil:
-                if blkid.blkid_probe_set_device(pr, file_no, 0, 0) != 0:
-                    raise BlkidException(-1, 'Unable to assign the device to probe control structure')
                 if s_block_mode:
                     blkid.blkid_probe_set_superblocks_flags(
-                        pr, blkid.BLKID_SUBLKS_LABEL | blkid.BLKID_SUBLKS_UUID | blkid.BLKID_SUBLKS_TYPE
+                        probe.pr, blkid.BLKID_SUBLKS_LABEL | blkid.BLKID_SUBLKS_UUID | blkid.BLKID_SUBLKS_TYPE
                             | blkid.BLKID_SUBLKS_SECTYPE | blkid.BLKID_SUBLKS_USAGE | blkid.BLKID_SUBLKS_VERSION
                     )
 
-                blkid.blkid_probe_enable_topology(pr, 1)
-                blkid.blkid_probe_enable_superblocks(pr, 0)
-                blkid.blkid_probe_enable_partitions(pr, 0)
-                ret = blkid.blkid_do_fullprobe(pr)
+                blkid.blkid_probe_enable_topology(probe.pr, 1)
+                blkid.blkid_probe_enable_superblocks(probe.pr, 0)
+                blkid.blkid_probe_enable_partitions(probe.pr, 0)
+                ret = blkid.blkid_do_fullprobe(probe.pr)
                 if ret < 0:
                     raise BlkidException(-1, 'Failed to probe device')
                 if ret or s_block_mode:
-                    blkid.blkid_probe_enable_partitions(pr, 1)
+                    blkid.blkid_probe_enable_partitions(probe.pr, 1)
                     enable_superblock = 1
-                    if character_device and blkid.blkid_probe_get_size(pr) <= (1024 * 1440) and \
-                            blkid.blkid_probe_is_wholedisk(pr):
+                    if not character_device and blkid.blkid_probe_get_size(probe.pr) <= (1024 * 1440) and \
+                            blkid.blkid_probe_is_wholedisk(probe.pr):
                         # TODO: Please verify why 1024 * 1440 ?
-                        blkid.blkid_probe_enable_superblocks(pr, 0)
-                        ret = blkid.blkid_do_fullprobe(pr)
+                        blkid.blkid_probe_enable_superblocks(probe.pr, 0)
+                        ret = blkid.blkid_do_fullprobe(probe.pr)
                         if ret < 0:
                             raise BlkidException(-1, 'Failed to probe device')
-                        enable_superblock = blkid.blkid_probe_lookup_value(pr, 'PTTYPE', NULL, NULL)
+                        enable_superblock = blkid.blkid_probe_lookup_value(probe.pr, 'PTTYPE', NULL, NULL)
 
                     if enable_superblock != 0:
-                        blkid.blkid_probe_set_partitions_flags(pr, blkid.BLKID_PARTS_ENTRY_DETAILS)
-                        blkid.blkid_probe_enable_superblocks(pr, 1)
-                        if blkid.blkid_do_safeprobe(pr) < 0:
+                        blkid.blkid_probe_set_partitions_flags(probe.pr, blkid.BLKID_PARTS_ENTRY_DETAILS)
+                        blkid.blkid_probe_enable_superblocks(probe.pr, 1)
+                        if blkid.blkid_do_safeprobe(probe.pr) < 0:
                             raise BlkidException(-1, 'Failed to probe device')
 
-                nvals = blkid.blkid_probe_numof_values(pr)
-                for i in range(nvals):
-                    if blkid.blkid_probe_get_value(pr, i, &name, &data, NULL) != 0:
-                        continue
-                    with gil:
-                        probing_data[name.decode()] = data.decode()
-
-        blkid.blkid_free_probe(pr)
+            probing_data = probe.retrieve_values()
 
         return probing_data
 

@@ -72,6 +72,7 @@ cdef extern from 'blkid.h' nogil:
     extern void blkid_free_probe(blkid_probe pr)
     extern int blkid_probe_is_wholedisk(blkid_probe pr)
     extern blkid_loff_t blkid_probe_get_size(blkid_probe pr)
+    extern blkid_probe blkid_new_probe_from_filename(const char *filename)
     # Partition probing flags
     extern int blkid_probe_set_partitions_flags(blkid_probe pr, int flags)
     enum:
