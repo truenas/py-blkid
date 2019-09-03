@@ -67,7 +67,7 @@ cdef class Cache:
                     continue
                 devname = blkid.blkid_dev_devname(dev)
                 with gil:
-                    block_devices.append(BlockDevice(devname.decode(), blkid.BLKID_DEV_FIND, self))
+                    block_devices.append(BlockDevice(devname.decode()))
 
             blkid.blkid_dev_iterate_end(blkid_iter)
 
@@ -137,8 +137,6 @@ cdef class BlkidProbe:
 
 
 cdef class BlockDevice:
-    cdef blkid.blkid_dev dev
-    cdef Cache cache
     cdef str device_name
 
     def __cinit__(self, str name, int flags=0, Cache cache=None):
@@ -151,47 +149,22 @@ cdef class BlockDevice:
         elif not stat.S_ISBLK(os.stat(self.name).st_mode):
             raise BlkidException(errno.EINVAL, 'Please specify a valid block device')
 
-        self.cache = cache or Cache()
-        cache_obj = self.cache.cache
-        cdef blkid.blkid_cache cache_p = <blkid.blkid_cache>cache_obj
-
-        flags = flags or blkid.BLKID_DEV_FIND
-
-        encoded_device_name = self.device_name.encode()
-        cdef const char * dev_name = encoded_device_name
-        with nogil:
-            self.dev = blkid.blkid_get_dev(cache_p, dev_name, flags)
-
-    def __getstate__(self, superblock_mode=False):
+    def __getstate__(self, superblock_mode=True, partition_data_filters=None):
         return {
             'name': self.name,
-            'partitions_exist': self.has_partitions(),
-            **self.tags,
+            'partitions_exist': self.partitions_exist,
+            'superblock_exist': self.superblock_exist,
             **self.lowprobe_device(superblock_mode=superblock_mode),
-            **self.retrieve_partition_data(),
+            **self.retrieve_partition_data(partition_data_filters),
         }
 
     property name:
         def __get__(self):
             return self.device_name
 
-    property tags:
+    property superblock_exist:
         def __get__(self):
-            cdef blkid.blkid_tag_iterate tag_iterator = blkid.blkid_tag_iterate_begin(self.dev)
-            cdef char *tag_type, *value
-            cdef int ret = 0
-            tags = {}
-            while True:
-                with nogil:
-                    ret = blkid.blkid_tag_next(tag_iterator, &tag_type, &value)
-                if ret != 0:
-                    with nogil:
-                        blkid.blkid_tag_iterate_end(tag_iterator)
-                    break
-
-                tags[tag_type.decode()] = value.decode()
-
-            return tags
+            return 'TYPE' in self.lowprobe_device(superblock_mode=True)
 
     def partition_data(self, filters=None):
         return self.retrieve_partition_data(filters)
