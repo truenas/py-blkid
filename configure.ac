@@ -18,20 +18,14 @@ m4_include([m4/AX_CHECK_DEFINE.m4])
 
 LDFLAGS="-l :libblkid.so.1"
 
-AC_ARG_VAR(util_linux_src, AS_HELP_STRING([Provide path for util-linux source tree. This defaults to /usr/local/include/util-linux]))
 
-util_linux_src=${util_linux_src:=/usr/local/include/util-linux}
 
-if [[ ! -d $util_linux_src ]]; then
-	AC_MSG_NOTICE([Unable to locate $util_linux_src source tree])
+blkid_source="/usr/include/blkid"
+
+if [[ ! -d $blkid_source ]]; then
+	AC_MSG_NOTICE([Unable to locate $blkid_source directory])
 else
-	CFLAGS="${CFLAGS} -I$util_linux_src/include/ -I$util_linux_src/lib/ -I$util_linux_src/libblkid/src/"
-	SECTION_TITLE([Generating blkid header])
-	dnl Let's please investigate a better way of doing this and the pwd bit too of course
-	pw_dir=$(pwd)
-	cd $util_linux_src
-	$util_linux_src/configure &>/dev/null
-	cd $pw_dir
+	CFLAGS="${CFLAGS} -I$blkid_source"
 fi
 
 SECTION_TITLE([RUNNING TESTS ON blkid.h HEADER])
