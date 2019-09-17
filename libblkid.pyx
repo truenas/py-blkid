@@ -280,7 +280,10 @@ cdef class BlockDevice:
 
 
 def list_block_devices(clean_cache=False, cache_filename=None):
-    return list(Cache(clean_cache, cache_filename))
+    # We use /sys/class/block for listing all block devices as libblkid does not retrieve block devices which
+    # have partitions - ( https://www.kernel.org/doc/html/latest/admin-guide/sysfs-rules.html ) This is for sysfs
+    # rules which should be kept in mind while using it
+    return [BlockDevice(os.path.join('/dev', path)) for path in os.listdir('/sys/class/block')]
 
 
 def list_supported_filesystems():
