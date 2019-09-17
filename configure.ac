@@ -1,4 +1,4 @@
-AC_INIT(py-blkid, 1.0)
+AC_INIT(py-blkid, 0.1)
 
 AC_LANG(C)
 AC_PROG_CC
