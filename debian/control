@@ -1,0 +1,16 @@
+Source: py-blkid
+Section: main/python
+Priority: optional
+Maintainer: Waqar Ahmed <waqarahmedjoyia@live.com>
+Build-Depends: debhelper (>=11~), dh-python, python3-all, cython3, libblkid-dev, python3-setuptools
+Standards-Version: 4.1.4
+Homepage: https://gitlab.com/freenas-project/py-blkid
+X-Python3-Version: >= 3.6
+
+Package: python3-blkid
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, ${python3:Depends}
+Description: Python libblkid bindings
+ py-blkid is a set of python bindings for
+ libblkid which helps retrieve information
+ for block devices.
