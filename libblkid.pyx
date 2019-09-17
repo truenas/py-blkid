@@ -42,7 +42,6 @@ cdef class Cache:
             if ret != 0:
                 raise BlkidCacheException(ret, 'Unable to retrieve cache')
 
-
     def __dealloc__(self):
         blkid.blkid_put_cache(self.cache)
 
@@ -149,14 +148,36 @@ cdef class BlockDevice:
         elif not stat.S_ISBLK(os.stat(self.name).st_mode):
             raise BlkidException(errno.EINVAL, 'Please specify a valid block device')
 
-    def __getstate__(self, superblock_mode=True, partition_data_filters=None):
+    def __getstate__(self, partition_data_filters=None):
+        probe_data = self.probing_data(True)
         return {
             'name': self.name,
             'partitions_exist': self.partitions_exist,
             'superblock_exist': self.superblock_exist,
-            **self.lowprobe_device(superblock_mode=superblock_mode),
-            **self.retrieve_partition_data(partition_data_filters),
+            'label': probe_data.pop('LABEL', None),
+            'version': probe_data.pop('VERSION', None),
+            'type': probe_data.pop('TYPE', None),
+            'usage': probe_data.pop('USAGE', None),
+            'uuid': probe_data.pop('UUID', None),
+            'partitions_data': self.retrieve_partition_data(partition_data_filters),
+            'io_limits': {
+                'logical_sector_size': int(probe_data.pop('LOGICAL_SECTOR_SIZE')),
+                'minimum_io_size': int(probe_data.pop('MINIMUM_IO_SIZE')),
+                'physical_sector_size': int(probe_data.pop('PHYSICAL_SECTOR_SIZE')),
+            }
         }
+
+    property label:
+        def __get__(self):
+            return self.probing_data(True).get('LABEL', None)
+
+    property version:
+        def __get__(self):
+            return self.probing_data(True).get('VERSION', None)
+
+    property type:
+        def __get__(self):
+            return self.probing_data(True).get('TYPE', None)
 
     property name:
         def __get__(self):
@@ -211,9 +232,9 @@ cdef class BlockDevice:
                     part_uuid = blkid.blkid_partition_get_uuid(par)
                     with gil:
                         partitions.append({
-                            'partition_number': part_no,
-                            'partition_start': start,
-                            'partition_size': part_size,
+                            'partition_number': int(part_no),
+                            'partition_start': int(start),
+                            'partition_size': int(part_size),
                             'part_name': part_name.decode() if part_name != NULL else None,
                             'part_uuid': part_uuid.decode() if part_uuid != NULL else None,
                         })
@@ -271,7 +292,7 @@ cdef class BlockDevice:
 
         return probing_data
 
-    def probing_data(self, superblock_mode=False):
+    def probing_data(self, superblock_mode=True):
         return self.lowprobe_device(superblock_mode)
 
     property partitions_exist:
