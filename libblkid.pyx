@@ -138,7 +138,7 @@ cdef class BlkidProbe:
 cdef class BlockDevice:
     cdef str device_name
 
-    def __cinit__(self, str name, int flags=0, Cache cache=None):
+    def __cinit__(self, str name, int flags=0):
         self.device_name = name
 
         if not self.device_name:
@@ -300,7 +300,7 @@ cdef class BlockDevice:
             return self.has_partitions()
 
 
-def list_block_devices(clean_cache=False, cache_filename=None):
+def list_block_devices():
     # We use /sys/class/block for listing all block devices as libblkid does not retrieve block devices which do not
     # have partitions by default - ( https://www.kernel.org/doc/html/latest/admin-guide/sysfs-rules.html )
     # This is for sysfs rules which should be kept in mind while using it
