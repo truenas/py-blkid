@@ -145,13 +145,14 @@ cdef class BlockDevice:
             raise BlkidException(errno.EINVAL, 'Please specify either device object or block device name')
         elif not os.path.exists(self.device_name):
             raise BlkidException(errno.EINVAL, f'{self.device_name} does not exist')
-        elif not stat.S_ISBLK(os.stat(self.name).st_mode):
+        elif not stat.S_ISBLK(os.stat(self.path).st_mode):
             raise BlkidException(errno.EINVAL, 'Please specify a valid block device')
 
     def __getstate__(self, partition_data_filters=None):
         probe_data = self.probing_data(True)
         return {
             'name': self.name,
+            'path': self.path,
             'partitions_exist': self.partitions_exist,
             'superblock_exist': self.superblock_exist,
             'label': probe_data.pop('LABEL', None),
@@ -181,6 +182,10 @@ cdef class BlockDevice:
 
     property name:
         def __get__(self):
+            return self.device_name.split('/')[-1]
+
+    property path:
+        def __get__(self):
             return self.device_name
 
     property superblock_exist:
@@ -196,7 +201,7 @@ cdef class BlockDevice:
             # There is no partition related data
             return partition_data
 
-        cdef BlkidProbe probe = BlkidProbe(self.name)
+        cdef BlkidProbe probe = BlkidProbe(self.path)
         cdef blkid.blkid_partlist ls
         cdef blkid.blkid_parttable root_tab
         cdef blkid.blkid_loff_t device_size, offset, start, part_size
@@ -252,7 +257,7 @@ cdef class BlockDevice:
         return partition_data
 
     cdef has_partitions(self):
-        cdef BlkidProbe probe = BlkidProbe(self.name)
+        cdef BlkidProbe probe = BlkidProbe(self.path)
         cdef int ret
         with probe:
             with nogil:
@@ -265,7 +270,7 @@ cdef class BlockDevice:
     cdef lowprobe_device(self, superblock_mode=False):
         cdef int ret, file_no, enable_superblock, nvals = 0, s_block_mode = superblock_mode
         cdef const char * name, * data
-        cdef BlkidProbe probe = BlkidProbe(self.name)
+        cdef BlkidProbe probe = BlkidProbe(self.path)
 
         with probe:
             with nogil:
@@ -300,11 +305,15 @@ cdef class BlockDevice:
             return self.has_partitions()
 
 
-def list_block_devices():
+def list_block_devices(list_partitions=False):
     # We use /sys/class/block for listing all block devices as libblkid does not retrieve block devices which do not
     # have partitions by default - ( https://www.kernel.org/doc/html/latest/admin-guide/sysfs-rules.html )
     # This is for sysfs rules which should be kept in mind while using it
-    return [BlockDevice(os.path.join('/dev', path)) for path in os.listdir('/sys/class/block')]
+    devices_path = '/sys/class/block' if list_partitions else '/sys/block'
+    if os.path.exists(devices_path):
+        return [BlockDevice(os.path.join('/dev', path)) for path in os.listdir(devices_path)]
+    else:
+        return list(Cache())
 
 
 def list_supported_filesystems():
