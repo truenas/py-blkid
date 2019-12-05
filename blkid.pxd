@@ -116,3 +116,4 @@ cdef extern from 'blkid.h' nogil:
     extern int blkid_partition_get_partno(blkid_partition par)
     extern const char *blkid_partition_get_name(blkid_partition par)
     extern const char *blkid_partition_get_uuid(blkid_partition par)
+    extern const char *blkid_partition_get_type_string(blkid_partition par)

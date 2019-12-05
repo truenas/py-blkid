@@ -235,6 +235,7 @@ cdef class BlockDevice:
                     part_size = blkid.blkid_partition_get_size(par)
                     part_name = blkid.blkid_partition_get_name(par)
                     part_uuid = blkid.blkid_partition_get_uuid(par)
+                    part_type = blkid.blkid_partition_get_type_string(par)
                     with gil:
                         partitions.append({
                             'partition_number': int(part_no),
@@ -242,6 +243,7 @@ cdef class BlockDevice:
                             'partition_size': int(part_size),
                             'part_name': part_name.decode() if part_name != NULL else None,
                             'part_uuid': part_uuid.decode() if part_uuid != NULL else None,
+                            'type': part_type.decode() if part_type != NULL else None,
                         })
 
             if filter_values is None or 'partitions' in filter_values:
