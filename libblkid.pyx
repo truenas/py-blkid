@@ -158,6 +158,7 @@ cdef class BlockDevice:
             'label': probe_data.pop('LABEL', None),
             'version': probe_data.pop('VERSION', None),
             'type': probe_data.pop('TYPE', None),
+            'size': self.size,
             'usage': probe_data.pop('USAGE', None),
             'uuid': probe_data.pop('UUID', None),
             'partitions_data': self.retrieve_partition_data(partition_data_filters),
@@ -187,6 +188,10 @@ cdef class BlockDevice:
     property path:
         def __get__(self):
             return self.device_name
+
+    property size:
+        def __get__(self):
+            return self.retrieve_size()
 
     property superblock_exist:
         def __get__(self):
@@ -260,6 +265,14 @@ cdef class BlockDevice:
             partition_data['partition_id'] = partition_id.decode()
 
         return partition_data
+
+    cdef retrieve_size(self):
+        cdef BlkidProbe probe = BlkidProbe(self.path)
+        cdef blkid.blkid_loff_t device_size
+        with probe:
+            with nogil:
+                device_size = blkid.blkid_probe_get_size(probe.pr)
+        return device_size
 
     cdef has_partitions(self):
         cdef BlkidProbe probe = BlkidProbe(self.path)
