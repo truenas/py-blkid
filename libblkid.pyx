@@ -192,6 +192,9 @@ cdef class BlockDevice:
         def __get__(self):
             return 'TYPE' in self.lowprobe_device(superblock_mode=True)
 
+    def __eq__(self, other):
+        return self.name == other.name
+
     def partition_data(self, filters=None):
         return self.retrieve_partition_data(filters)
 
