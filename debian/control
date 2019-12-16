@@ -2,7 +2,7 @@ Source: py-blkid
 Section: main/python
 Priority: optional
 Maintainer: Waqar Ahmed <waqarahmedjoyia@live.com>
-Build-Depends: debhelper-compat (= 12), dh-python, python3-all, cython3, libblkid-dev, python3-setuptools
+Build-Depends: debhelper-compat (= 12), dh-python, python3-all, python3-dev, cython3, libblkid-dev, python3-setuptools
 Standards-Version: 4.4.1
 Homepage: https://github.com/truenas/py-blkid
 
