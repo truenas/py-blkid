@@ -203,9 +203,9 @@ cdef class BlockDevice:
     cdef io_limits_data(self):
         probe_data = self.probing_data(True)
         return {
-            'logical_sector_size': int(probe_data.pop('LOGICAL_SECTOR_SIZE')),
-            'minimum_io_size': int(probe_data.pop('MINIMUM_IO_SIZE')),
-            'physical_sector_size': int(probe_data.pop('PHYSICAL_SECTOR_SIZE')),
+            'logical_sector_size': int(probe_data['LOGICAL_SECTOR_SIZE']),
+            'minimum_io_size': int(probe_data['MINIMUM_IO_SIZE']),
+            'physical_sector_size': int(probe_data['PHYSICAL_SECTOR_SIZE']),
         }
 
     def partition_data(self, filters=None):
