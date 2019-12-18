@@ -162,11 +162,7 @@ cdef class BlockDevice:
             'usage': probe_data.pop('USAGE', None),
             'uuid': probe_data.pop('UUID', None),
             'partitions_data': self.retrieve_partition_data(partition_data_filters),
-            'io_limits': {
-                'logical_sector_size': int(probe_data.pop('LOGICAL_SECTOR_SIZE')),
-                'minimum_io_size': int(probe_data.pop('MINIMUM_IO_SIZE')),
-                'physical_sector_size': int(probe_data.pop('PHYSICAL_SECTOR_SIZE')),
-            }
+            'io_limits': self.io_limits(),
         }
 
     property label:
@@ -197,8 +193,20 @@ cdef class BlockDevice:
         def __get__(self):
             return 'TYPE' in self.lowprobe_device(superblock_mode=True)
 
+    property io_limits:
+        def __get__(self):
+            return self.io_limits_data()
+
     def __eq__(self, other):
         return self.name == other.name
+
+    cdef io_limits_data(self):
+        probe_data = self.probing_data(True)
+        return {
+            'logical_sector_size': int(probe_data.pop('LOGICAL_SECTOR_SIZE')),
+            'minimum_io_size': int(probe_data.pop('MINIMUM_IO_SIZE')),
+            'physical_sector_size': int(probe_data.pop('PHYSICAL_SECTOR_SIZE')),
+        }
 
     def partition_data(self, filters=None):
         return self.retrieve_partition_data(filters)
