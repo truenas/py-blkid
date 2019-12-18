@@ -162,11 +162,7 @@ cdef class BlockDevice:
             'usage': probe_data.pop('USAGE', None),
             'uuid': probe_data.pop('UUID', None),
             'partitions_data': self.retrieve_partition_data(partition_data_filters),
-            'io_limits': {
-                'logical_sector_size': int(probe_data.pop('LOGICAL_SECTOR_SIZE')),
-                'minimum_io_size': int(probe_data.pop('MINIMUM_IO_SIZE')),
-                'physical_sector_size': int(probe_data.pop('PHYSICAL_SECTOR_SIZE')),
-            }
+            'io_limits': self.io_limits,
         }
 
     property label:
@@ -197,8 +193,20 @@ cdef class BlockDevice:
         def __get__(self):
             return 'TYPE' in self.lowprobe_device(superblock_mode=True)
 
+    property io_limits:
+        def __get__(self):
+            return self.io_limits_data()
+
     def __eq__(self, other):
         return self.name == other.name
+
+    cdef io_limits_data(self):
+        probe_data = self.probing_data(True)
+        return {
+            'logical_sector_size': int(probe_data['LOGICAL_SECTOR_SIZE']),
+            'minimum_io_size': int(probe_data['MINIMUM_IO_SIZE']),
+            'physical_sector_size': int(probe_data['PHYSICAL_SECTOR_SIZE']),
+        }
 
     def partition_data(self, filters=None):
         return self.retrieve_partition_data(filters)
@@ -209,10 +217,11 @@ cdef class BlockDevice:
             # There is no partition related data
             return partition_data
 
+        block_size = self.io_limits['logical_sector_size']
         cdef BlkidProbe probe = BlkidProbe(self.path)
         cdef blkid.blkid_partlist ls
         cdef blkid.blkid_parttable root_tab
-        cdef blkid.blkid_loff_t device_size, offset, start, part_size
+        cdef blkid.blkid_loff_t device_size, offset, start, no_of_blocks
         cdef const char * partition_type, * partition_id, * part_name, * part_uuid
         cdef int no_of_partitions, part_no
         cdef blkid.blkid_partition par
@@ -240,7 +249,7 @@ cdef class BlockDevice:
                     # Retrieve partition data
                     part_no = blkid.blkid_partition_get_partno(par)
                     start = blkid.blkid_partition_get_start(par)
-                    part_size = blkid.blkid_partition_get_size(par)
+                    no_of_blocks = blkid.blkid_partition_get_size(par)
                     part_name = blkid.blkid_partition_get_name(par)
                     part_uuid = blkid.blkid_partition_get_uuid(par)
                     part_type = blkid.blkid_partition_get_type_string(par)
@@ -248,7 +257,8 @@ cdef class BlockDevice:
                         partitions.append({
                             'partition_number': int(part_no),
                             'partition_start': int(start),
-                            'partition_size': int(part_size),
+                            'partition_size': int(no_of_blocks) * block_size,
+                            'partition_blocks': int(no_of_blocks),
                             'part_name': part_name.decode() if part_name != NULL else None,
                             'part_uuid': part_uuid.decode() if part_uuid != NULL else None,
                             'type': part_type.decode() if part_type != NULL else None,
